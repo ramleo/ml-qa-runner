@@ -106,6 +106,7 @@ jobs:
           path: |
             results.json
             steps.json
+            aria.txt
             test-results/
           retention-days: 1
           if-no-files-found: warn
