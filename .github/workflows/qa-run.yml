@@ -67,6 +67,11 @@ jobs:
           npm i -D @playwright/test@1.55.0
           npx playwright install --with-deps chromium
 
+      # A FAILING TEST IS A NORMAL, EXPECTED OUTCOME for a QA tool — it must NOT
+      # fail the workflow run (that would email the repo owner on every failing
+      # user test). continue-on-error keeps the job green; the real pass/fail is
+      # read from results.json by the proxy. Only genuine infra errors (a broken
+      # install step above) fail the run and are worth a notification.
       - name: Run test
         id: pw
         continue-on-error: true
@@ -82,12 +87,3 @@ jobs:
             test-results/
           retention-days: 1
           if-no-files-found: warn
-
-      - name: Reflect test outcome
-        if: always()
-        run: |
-          if [ "${{ steps.pw.outcome }}" = "success" ]; then
-            echo "test passed"; exit 0
-          else
-            echo "test failed"; exit 1
-          fi
