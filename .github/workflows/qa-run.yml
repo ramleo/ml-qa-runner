@@ -46,7 +46,7 @@ jobs:
             timeout: 30000,
             workers: 1,
             retries: 0,
-            reporter: [['json', { outputFile: 'results.json' }], ['line']],
+            reporter: [['json', { outputFile: 'results.json' }], ['line'], ['./reporter.js']],
             outputDir: './test-results',
             use: {
               headless: true,
@@ -55,6 +55,27 @@ jobs:
               trace: 'retain-on-failure',
             },
           });
+          EOF
+          # Custom reporter — the built-in JSON reporter omits steps, so capture a
+          # compact timeline (actions, expects, test.steps) into steps.json.
+          cat > reporter.js <<'EOF'
+          class StepReporter {
+            constructor() { this.steps = []; }
+            onStepEnd(test, result, step) {
+              if (['pw:api', 'expect', 'test.step'].includes(step.category)) {
+                this.steps.push({
+                  title: step.title,
+                  category: step.category,
+                  duration: step.duration,
+                  ok: !step.error,
+                });
+              }
+            }
+            onEnd() {
+              require('fs').writeFileSync('steps.json', JSON.stringify(this.steps.slice(0, 100)));
+            }
+          }
+          module.exports = StepReporter;
           EOF
 
       - uses: actions/setup-node@v4
@@ -84,6 +105,7 @@ jobs:
           name: qa-artifacts
           path: |
             results.json
+            steps.json
             test-results/
           retention-days: 1
           if-no-files-found: warn
