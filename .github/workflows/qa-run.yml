@@ -1,0 +1,93 @@
+name: qa-run
+run-name: qa ${{ inputs.correlation_id }}
+
+# Isolated Testwright test-execution runner (Phase 2b). Dispatched by the
+# ML-Unified Space's /qa/run proxy with the generated Playwright test as an
+# input. Runs on an ephemeral GitHub-hosted runner — nothing touches our site
+# or the Space. The user-supplied code is passed via an env var (never
+# interpolated into the shell) and the job holds no secrets.
+
+on:
+  workflow_dispatch:
+    inputs:
+      code:
+        description: Playwright test source (@playwright/test)
+        required: true
+      base_url:
+        description: Target base URL (own-site only; enforced upstream by the proxy)
+        required: false
+        default: ""
+      test_name:
+        description: Optional test name
+        required: false
+        default: ""
+      correlation_id:
+        description: Correlation id the proxy uses to find this run
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Prepare project
+        env:
+          CODE: ${{ github.event.inputs.code }}
+        run: |
+          mkdir -p tests
+          printf '%s' "$CODE" > tests/generated.spec.ts
+          cat > playwright.config.ts <<'EOF'
+          import { defineConfig } from '@playwright/test';
+          export default defineConfig({
+            testDir: './tests',
+            timeout: 30000,
+            workers: 1,
+            retries: 0,
+            reporter: [['json', { outputFile: 'results.json' }], ['line']],
+            outputDir: './test-results',
+            use: {
+              headless: true,
+              screenshot: 'only-on-failure',
+              video: 'retain-on-failure',
+              trace: 'retain-on-failure',
+            },
+          });
+          EOF
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Playwright + Chromium
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm i -D @playwright/test@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Run test
+        id: pw
+        continue-on-error: true
+        run: npx playwright test
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-artifacts
+          path: |
+            results.json
+            test-results/
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Reflect test outcome
+        if: always()
+        run: |
+          if [ "${{ steps.pw.outcome }}" = "success" ]; then
+            echo "test passed"; exit 0
+          else
+            echo "test failed"; exit 1
+          fi
