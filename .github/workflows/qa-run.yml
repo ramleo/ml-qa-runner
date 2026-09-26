@@ -24,6 +24,10 @@ on:
       correlation_id:
         description: Correlation id the proxy uses to find this run
         required: true
+      repeat_each:
+        description: Times to run the test back-to-back (flakiness check; 1 = normal)
+        required: false
+        default: "1"
 
 permissions:
   contents: read
@@ -31,7 +35,8 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # Headroom for a flakiness run (up to 10 repeats) on top of install time.
+    timeout-minutes: 15
     steps:
       - name: Prepare project
         env:
@@ -96,7 +101,16 @@ jobs:
       - name: Run test
         id: pw
         continue-on-error: true
-        run: npx playwright test
+        env:
+          REPEAT_EACH: ${{ github.event.inputs.repeat_each }}
+        run: |
+          # Validate + clamp the repeat count (defence in depth; the proxy also
+          # bounds it). Non-numeric or out-of-range falls back to a single run.
+          R="$REPEAT_EACH"
+          echo "$R" | grep -qE '^[0-9]+$' || R=1
+          [ "$R" -lt 1 ] && R=1
+          [ "$R" -gt 10 ] && R=10
+          npx playwright test --repeat-each="$R"
 
       - name: Upload artifacts
         if: always()
