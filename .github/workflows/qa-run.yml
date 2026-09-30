@@ -6,6 +6,12 @@ run-name: qa ${{ inputs.correlation_id }}
 # input. Runs on an ephemeral GitHub-hosted runner — nothing touches our site
 # or the Space. The user-supplied code is passed via an env var (never
 # interpolated into the shell) and the job holds no secrets.
+#
+# SPEED: runs inside the official Playwright image (browsers + OS deps already
+# baked in), so there is NO `npx playwright install --with-deps` download on
+# every run — that ~150MB + apt step (previously ~60-90s per run) is gone. The
+# image tag is pinned to the SAME version as @playwright/test below so the
+# preinstalled browser build matches the test runner. Bump both together.
 
 on:
   workflow_dispatch:
@@ -35,7 +41,12 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    # Headroom for a flakiness run (up to 10 repeats) on top of install time.
+    # Browsers + OS deps are preinstalled in this image; keep the tag matched to
+    # the @playwright/test version installed in the "Install" step below.
+    container:
+      image: mcr.microsoft.com/playwright:v1.55.0-jammy
+    # Headroom for a flakiness run (up to 10 repeats). No install download now,
+    # so this is almost entirely test time.
     timeout-minutes: 15
     steps:
       - name: Prepare project
@@ -83,15 +94,12 @@ jobs:
           module.exports = StepReporter;
           EOF
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install Playwright + Chromium
+      # Only the test runner package is needed — the browsers it drives are
+      # already in the image (matching version), so NO `playwright install`.
+      - name: Install @playwright/test
         run: |
           npm init -y >/dev/null 2>&1
           npm i -D @playwright/test@1.55.0
-          npx playwright install --with-deps chromium
 
       # A FAILING TEST IS A NORMAL, EXPECTED OUTCOME for a QA tool — it must NOT
       # fail the workflow run (that would email the repo owner on every failing
