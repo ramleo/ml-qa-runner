@@ -1,0 +1,85 @@
+name: qa-monitors
+
+# Testwright R8 — scheduled monitoring. Hourly, this fetches the DUE monitors from
+# the site (GET /api/qa-run/monitor?due=1, owner-token header), runs each stored
+# Playwright test on this ephemeral runner, and reports pass/fail back
+# (POST action=record) so the dashboard shows uptime and raises alerts. The owner
+# creates monitors in the Run stage; nothing here touches secrets beyond the token.
+#
+# Setup: add QA_OWNER_TOKEN as a repo secret (same value as the site/Space), and
+# optionally a SITE_URL repo variable (defaults to the production portfolio).
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # hourly; each monitor's own interval decides if it's due
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  monitors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Playwright + Chromium
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm i -D @playwright/test@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Run due monitors
+        env:
+          SITE_URL: ${{ vars.SITE_URL || 'https://ml-portfolio-rho.vercel.app' }}
+          QA_OWNER_TOKEN: ${{ secrets.QA_OWNER_TOKEN }}
+        run: |
+          cat > pw.config.ts <<'EOF'
+          import { defineConfig } from '@playwright/test';
+          export default defineConfig({
+            testDir: './tests', timeout: 30000, workers: 1, retries: 0,
+            reporter: [['json', { outputFile: 'results.json' }], ['line']],
+            use: { headless: true },
+          });
+          EOF
+          cat > run-monitors.mjs <<'EOF'
+          import { execSync } from 'node:child_process';
+          import fs from 'node:fs';
+
+          const SITE = process.env.SITE_URL;
+          const TOKEN = process.env.QA_OWNER_TOKEN;
+          if (!TOKEN) { console.log('QA_OWNER_TOKEN not set — nothing to do.'); process.exit(0); }
+          const h = { 'x-qa-owner-token': TOKEN, 'Content-Type': 'application/json' };
+
+          const res = await fetch(`${SITE}/api/qa-run/monitor?due=1`, { headers: h });
+          const body = await res.json().catch(() => ({}));
+          const monitors = body.monitors || [];
+          console.log(`due monitors: ${monitors.length}`);
+
+          for (const m of monitors) {
+            fs.mkdirSync('tests', { recursive: true });
+            fs.writeFileSync('tests/monitor.spec.ts', m.code || '');
+            let status = 'error';
+            // A failing test exits non-zero — that's a normal outcome, not an infra
+            // error; the real verdict is read from results.json below.
+            try { execSync('npx playwright test -c pw.config.ts', { stdio: 'inherit' }); } catch {}
+            try {
+              const r = JSON.parse(fs.readFileSync('results.json', 'utf8'));
+              const s = r.stats || {};
+              if ((s.unexpected || 0) > 0) status = 'failed';
+              else if ((s.expected || 0) > 0) status = (s.flaky || 0) > 0 ? 'flaky' : 'passed';
+              else status = 'error';
+            } catch { status = 'error'; }
+            console.log(`monitor ${m.id} (${m.name || 'unnamed'}): ${status}`);
+            await fetch(`${SITE}/api/qa-run/monitor`, {
+              method: 'POST', headers: h,
+              body: JSON.stringify({ action: 'record', id: m.id, status }),
+            }).catch((e) => console.log('record failed:', String(e).slice(0, 80)));
+            fs.rmSync('tests/monitor.spec.ts', { force: true });
+            fs.rmSync('results.json', { force: true });
+          }
+          EOF
+          node run-monitors.mjs
