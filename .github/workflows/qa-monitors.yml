@@ -20,17 +20,18 @@ permissions:
 jobs:
   monitors:
     runs-on: ubuntu-latest
+    # Browsers + OS deps are preinstalled in this image (matches qa-run.yml); keep
+    # the tag matched to the @playwright/test version installed below.
+    container:
+      image: mcr.microsoft.com/playwright:v1.55.0-jammy
     timeout-minutes: 20
     steps:
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install Playwright + Chromium
+      # Only the runner package is needed — the browsers are already in the image,
+      # so NO `playwright install`.
+      - name: Install @playwright/test
         run: |
           npm init -y >/dev/null 2>&1
           npm i -D @playwright/test@1.55.0
-          npx playwright install --with-deps chromium
 
       - name: Run due monitors
         env:
