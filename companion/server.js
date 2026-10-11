@@ -80,7 +80,12 @@ function ensureBrowsers() {
 function writeProject(code, mode) {
   fs.rmSync(RUN_DIR, { recursive: true, force: true });
   fs.mkdirSync(path.join(RUN_DIR, "tests"), { recursive: true });
-  fs.writeFileSync(path.join(RUN_DIR, "tests", "generated.spec.ts"), code);
+  // In slow mode, hold the final frame a few seconds after the test so a short run
+  // doesn't vanish before you can see it (slowMo only paces the steps, not the end).
+  const spec = mode === "slow"
+    ? code + "\ntest.afterEach(async ({ page }) => { await page.waitForTimeout(3500); });\n"
+    : code;
+  fs.writeFileSync(path.join(RUN_DIR, "tests", "generated.spec.ts"), spec);
   // Copy the sample fixtures next to the spec so a file-upload tool's
   // setInputFiles('fixtures/…') and the camera/mic fake-media file flags below
   // resolve (cwd is RUN_DIR when the test runs). No-op if none are shipped.
@@ -106,7 +111,7 @@ function writeProject(code, mode) {
       "  use: {",
       "    headless: false,",
       "    trace: 'retain-on-failure',",
-      `    launchOptions: { slowMo: ${mode === "slow" ? 600 : 250}, args: mediaArgs },`,
+      `    launchOptions: { slowMo: ${mode === "slow" ? 1500 : 250}, args: mediaArgs },`,
       "  },",
       "});",
       "",
