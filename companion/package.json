@@ -1,11 +1,16 @@
 {
   "name": "@airaml/testwright-companion",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Testwright local companion — runs an authored Playwright test on your own machine, headed, so you can watch it live. The Testwright web UI talks to it over localhost.",
   "type": "commonjs",
   "bin": {
     "testwright-companion": "server.js"
   },
+  "files": [
+    "server.js",
+    "fixtures/",
+    "README.md"
+  ],
   "scripts": {
     "start": "node server.js"
   },

@@ -1,0 +1,4 @@
+2026-10-11 00:00:01 INFO service started
+2026-10-11 00:00:02 WARN cache miss key=abc
+2026-10-11 00:00:03 ERROR timeout upstream=db
+2026-10-11 00:00:04 INFO recovered

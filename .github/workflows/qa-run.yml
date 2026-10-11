@@ -49,6 +49,19 @@ jobs:
     # so this is almost entirely test time.
     timeout-minutes: 15
     steps:
+      # Bring in the committed test fixtures ONLY (sparse) — small sample files
+      # (sample.png/csv/pdf/wav/mp4, fake-camera.y4m) a generated test uploads via
+      # setInputFiles, and the fake media streams below. Nothing else from the repo
+      # is needed by a run. If git is unavailable the job still runs; file-upload /
+      # camera tests simply have no fixtures (same as before Phase 2).
+      - name: Fetch fixtures
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          sparse-checkout: fixtures
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+
       - name: Prepare project
         env:
           CODE: ${{ github.event.inputs.code }}
@@ -57,6 +70,25 @@ jobs:
           printf '%s' "$CODE" > tests/generated.spec.ts
           cat > playwright.config.ts <<'EOF'
           import { defineConfig } from '@playwright/test';
+          import path from 'node:path';
+          import fs from 'node:fs';
+          // Fixtures live in ./fixtures (sparse-checked-out above). Resolve to an
+          // absolute path so the Chromium fake-media file flags work regardless of cwd.
+          // Camera/mic tools: feed a synthetic stream so getUserMedia succeeds in CI
+          // (no real device) and the permission prompt is auto-accepted — a test then
+          // just clicks the capture/start control, no permission boilerplate. The file
+          // flags are added only if the fixtures are present (checkout may be skipped);
+          // without them Chromium's own synthetic device is used, so camera tests still run.
+          const FX = path.resolve('fixtures');
+          const mediaArgs = [
+            '--use-fake-ui-for-media-stream',
+            '--use-fake-device-for-media-stream',
+            '--autoplay-policy=no-user-gesture-required',
+          ];
+          if (fs.existsSync(path.join(FX, 'fake-camera.y4m')))
+            mediaArgs.push('--use-file-for-fake-video-capture=' + path.join(FX, 'fake-camera.y4m'));
+          if (fs.existsSync(path.join(FX, 'fake-audio.wav')))
+            mediaArgs.push('--use-file-for-fake-audio-capture=' + path.join(FX, 'fake-audio.wav'));
           export default defineConfig({
             testDir: './tests',
             timeout: 30000,
@@ -70,6 +102,7 @@ jobs:
               screenshot: 'only-on-failure',
               video: 'retain-on-failure',
               trace: 'retain-on-failure',
+              launchOptions: { args: mediaArgs },
             },
           });
           EOF

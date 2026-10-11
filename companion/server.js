@@ -81,11 +81,24 @@ function writeProject(code, mode) {
   fs.rmSync(RUN_DIR, { recursive: true, force: true });
   fs.mkdirSync(path.join(RUN_DIR, "tests"), { recursive: true });
   fs.writeFileSync(path.join(RUN_DIR, "tests", "generated.spec.ts"), code);
+  // Copy the sample fixtures next to the spec so a file-upload tool's
+  // setInputFiles('fixtures/…') and the camera/mic fake-media file flags below
+  // resolve (cwd is RUN_DIR when the test runs). No-op if none are shipped.
+  const fxSrc = path.join(__dirname, "fixtures");
+  if (fs.existsSync(fxSrc))
+    fs.cpSync(fxSrc, path.join(RUN_DIR, "fixtures"), { recursive: true });
   // Headed so the user watches it live; keep a trace for after-the-fact replay.
+  // Same synthetic camera/mic stream as CI so upload/camera tools run here too.
   fs.writeFileSync(
     path.join(RUN_DIR, "playwright.config.ts"),
     [
       "import { defineConfig } from '@playwright/test';",
+      "import path from 'node:path';",
+      "import fs from 'node:fs';",
+      "const FX = path.resolve('fixtures');",
+      "const mediaArgs = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'];",
+      "if (fs.existsSync(path.join(FX, 'fake-camera.y4m'))) mediaArgs.push('--use-file-for-fake-video-capture=' + path.join(FX, 'fake-camera.y4m'));",
+      "if (fs.existsSync(path.join(FX, 'fake-audio.wav'))) mediaArgs.push('--use-file-for-fake-audio-capture=' + path.join(FX, 'fake-audio.wav'));",
       "export default defineConfig({",
       "  testDir: './tests',",
       "  timeout: 60000,",
@@ -93,7 +106,7 @@ function writeProject(code, mode) {
       "  use: {",
       "    headless: false,",
       "    trace: 'retain-on-failure',",
-      `    launchOptions: { slowMo: ${mode === "slow" ? 600 : 250} },`,
+      `    launchOptions: { slowMo: ${mode === "slow" ? 600 : 250}, args: mediaArgs },`,
       "  },",
       "});",
       "",
