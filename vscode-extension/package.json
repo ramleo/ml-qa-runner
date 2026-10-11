@@ -1,0 +1,47 @@
+{
+  "name": "testwright-runner",
+  "displayName": "Testwright",
+  "description": "Run a Testwright-authored Playwright test headed from VS Code — with sample fixtures and a fake camera/mic stream, so upload and camera tools run too.",
+  "version": "0.1.0",
+  "publisher": "airaml",
+  "license": "MIT",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Testing", "Other"],
+  "keywords": ["playwright", "testwright", "e2e", "qa", "testing"],
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "testwright.runHeaded",
+        "title": "Testwright: Run this test (headed)",
+        "icon": "$(play)"
+      }
+    ],
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "testwright.runHeaded",
+          "when": "resourceExtname =~ /\\.(ts|js)$/ && resourceFilename =~ /spec|test/",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "testwright.runHeaded",
+          "when": "editorIsOpen"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Testwright",
+      "properties": {
+        "testwright.playwrightVersion": {
+          "type": "string",
+          "default": "1.55.0",
+          "description": "Version of @playwright/test to install in the run workspace (match the CI runner)."
+        }
+      }
+    }
+  }
+}

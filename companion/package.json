@@ -9,6 +9,7 @@
   "files": [
     "server.js",
     "fixtures/",
+    "launchers/",
     "README.md"
   ],
   "scripts": {
