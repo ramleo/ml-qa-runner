@@ -1,6 +1,6 @@
 {
   "name": "@airaml/testwright-companion",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Testwright local companion — runs an authored Playwright test on your own machine, headed, so you can watch it live. The Testwright web UI talks to it over localhost.",
   "type": "commonjs",
   "bin": {

@@ -19,6 +19,7 @@
 
 const http = require("http");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { spawn, spawnSync } = require("child_process");
 
@@ -40,7 +41,22 @@ const ALLOW_HOSTS = [
   "127.0.0.1",
 ];
 
-const RUN_DIR = path.join(__dirname, ".tw-run");
+// The run dir MUST live outside any node_modules tree: Node (>=22) refuses to
+// strip TypeScript types for .ts files under node_modules
+// (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING), and when installed via npx this
+// package sits inside node_modules — so writing the throwaway config/spec next to
+// it made Playwright's config load crash. The OS temp dir is always outside it.
+const RUN_DIR = path.join(os.tmpdir(), "testwright-run");
+
+// Resolve the real node_modules root (where @playwright/test actually lives) and
+// the Playwright CLI inside it. npx hoists deps to a sibling node_modules, not
+// into the package dir, so we locate it via require.resolve rather than __dirname.
+const PW_ENTRY = require.resolve("@playwright/test");
+const _NM_MARK = path.sep + "node_modules" + path.sep;
+const NM_ROOT = PW_ENTRY.slice(0, PW_ENTRY.lastIndexOf(_NM_MARK) + _NM_MARK.length - 1);
+const PW_BIN = path.join(NM_ROOT, ".bin",
+  process.platform === "win32" ? "playwright.cmd" : "playwright");
+
 let browsersReady = false;
 
 function hostAllowed(url) {
@@ -70,7 +86,7 @@ function send(res, code, obj) {
 function ensureBrowsers() {
   if (browsersReady) return;
   process.stdout.write("Ensuring Chromium is installed (first run only)…\n");
-  const r = spawnSync("npx", ["playwright", "install", "chromium"], {
+  const r = spawnSync(PW_BIN, ["install", "chromium"], {
     cwd: __dirname, stdio: "inherit",
   });
   if (r.status !== 0) throw new Error("playwright install chromium failed");
@@ -80,6 +96,16 @@ function ensureBrowsers() {
 function writeProject(code, mode) {
   fs.rmSync(RUN_DIR, { recursive: true, force: true });
   fs.mkdirSync(path.join(RUN_DIR, "tests"), { recursive: true });
+  // Link the real node_modules in so `import { defineConfig } from '@playwright/test'`
+  // (and the spec's imports) resolve from the temp dir. The dir itself is NOT under a
+  // node_modules path, so Node's TS type-stripping is allowed here (unlike the old
+  // in-package location). Fall back to a copy if the platform disallows symlinks.
+  const nmLink = path.join(RUN_DIR, "node_modules");
+  try {
+    fs.symlinkSync(NM_ROOT, nmLink, "junction");
+  } catch {
+    try { fs.cpSync(NM_ROOT, nmLink, { recursive: true }); } catch { /* best effort */ }
+  }
   // In slow mode, hold the final frame a few seconds after the test so a short run
   // doesn't vanish before you can see it (slowMo only paces the steps, not the end).
   const spec = mode === "slow"
@@ -145,8 +171,8 @@ function runTest(code, mode) {
   return new Promise((resolve) => {
     try { ensureBrowsers(); } catch (e) { return resolve({ error: String(e.message || e) }); }
     writeProject(code, mode);
-    const args = ["playwright", "test", "--headed", "--workers=1"];
-    const child = spawn("npx", args, { cwd: RUN_DIR, env: process.env });
+    const args = ["test", "--headed", "--workers=1"];
+    const child = spawn(PW_BIN, args, { cwd: RUN_DIR, env: process.env });
     let out = "";
     child.stdout.on("data", (d) => { out += d; process.stdout.write(d); });
     child.stderr.on("data", (d) => { out += d; process.stderr.write(d); });
