@@ -92,6 +92,9 @@ jobs:
           export default defineConfig({
             testDir: './tests',
             timeout: 30000,
+            // 15s for web-first assertions (default 5s is too short for a lazily
+            // code-split / ssr:false widget to mount after an SPA navigation).
+            expect: { timeout: 15000 },
             fullyParallel: true,
             workers: 3,
             retries: 0,

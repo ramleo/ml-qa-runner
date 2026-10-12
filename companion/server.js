@@ -133,6 +133,9 @@ function writeProject(code, mode) {
       "export default defineConfig({",
       "  testDir: './tests',",
       "  timeout: 60000,",
+      // 15s for web-first assertions (default 5s misses a lazily code-split / ssr:false
+      // widget that mounts a beat after an SPA navigation).
+      "  expect: { timeout: 15000 },",
       "  reporter: [['json', { outputFile: 'results.json' }], ['line']],",
       "  use: {",
       "    headless: false,",
